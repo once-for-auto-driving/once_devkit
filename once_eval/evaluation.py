@@ -5,8 +5,9 @@ Evaluation Server
 import numpy as np
 import numba
 
-from .iou_utils import rotate_iou_gpu_eval
-from .eval_utils import compute_split_parts, overall_filter, distance_filter, overall_distance_filter
+from iou_utils import rotate_iou_gpu_eval
+from rotate_iou_cpu_eval import rotate_iou_cpu_eval
+from eval_utils import compute_split_parts, overall_filter, distance_filter, overall_distance_filter
 
 iou_threshold_dict = {
     'Car': 0.7,
@@ -48,7 +49,9 @@ def get_evaluation_results(gt_annos, pred_annos, classes,
 
     num_samples = len(gt_annos)
     split_parts = compute_split_parts(num_samples, num_parts)
-    ious = compute_iou3d(gt_annos, pred_annos, split_parts, with_heading=ap_with_heading)
+    # commont out this line to use gpu version
+    # ious = compute_iou3d(gt_annos, pred_annos, split_parts, with_heading=ap_with_heading)
+    ious = compute_iou3d_cpu(gt_annos, pred_annos)
 
     num_classes = len(classes)
     if difficulty_mode == 'Distance':
@@ -417,3 +420,27 @@ def compute_iou3d(gt_annos, pred_annos, split_parts, with_heading):
             pred_num_idx += pred_box_num
         sample_idx += num_part_samples
     return ious
+
+
+def compute_iou3d_cpu(gt_annos, pred_annos):
+    ious = []
+    gt_num = len(gt_annos)
+    for i in range(gt_num):
+        gt_boxes = gt_annos[i]['boxes_3d']
+        pred_boxes = pred_annos[i]['boxes_3d']
+
+        iou3d_part = iou3d_kernel_cpu_with_heading(gt_boxes, pred_boxes)
+        ious.append(iou3d_part)
+    return ious
+
+
+if __name__ == '__main__':
+    info_data = pickle.load(open('once_infos_val.pkl'), 'rb') # you can find this file in once_devkit/submission_format/
+    pred_data = pickle.load(open('result.pkl'), 'rb') # your prediction file
+    gt_data = list()
+    for item in info_data:
+        if 'annos' in item:
+            gt_data.append(item['annos'])
+    classes = ['Car', 'Bus', 'Truck', 'Pedestrian', 'Cyclist']
+    result_str, result_dict = get_evaluation_results(gt_data, pred_data, ['Car', 'Bus', 'Truck', 'Pedestrian', 'Cyclist'], True)
+    print(result_str)
