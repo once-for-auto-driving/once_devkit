@@ -382,6 +382,12 @@ def iou3d_kernel_with_heading(gt_boxes, pred_boxes):
     iou3d[diff_rot > np.pi/2] = 0 # unmatched if diff_rot > 90
     return iou3d
 
+
+def rotate_iou_kernel_eval(gt_boxes, pred_boxes):
+    iou3d_cpu = rotate_iou_cpu_eval(gt_boxes, pred_boxes)
+    return iou3d_cpu
+
+
 def compute_iou3d(gt_annos, pred_annos, split_parts, with_heading):
     """
     Compute iou3d of all samples by parts
