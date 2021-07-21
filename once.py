@@ -120,13 +120,15 @@ class ONCE(object):
                                 'cam_intrinsic': np.array(anno_file['calib'][cam_name]['cam_intrinsic']),
                                 'distortion': np.array(anno_file['calib'][cam_name]['distortion'])
                             }
+                        if 'annos' in frame_anno.keys():
+                            info_dict[seq][frame_anno['frame_id']]['annos'] = frame_anno['annos']
                     info_dict[seq]['frame_list'] = sorted(frame_list)
 
     def get_frame_anno(self, seq_id, frame_id):
         split_name = self._find_split_name(seq_id)
         frame_info = getattr(self, '{}_info'.format(split_name))[seq_id][frame_id]
-        if 'anno' in frame_info:
-            return frame_info['anno']
+        if 'annos' in frame_info:
+            return frame_info['annos']
         return None
 
     def load_point_cloud(self, seq_id, frame_id):
@@ -182,6 +184,25 @@ class ONCE(object):
                     print(int(point[0]), int(point[1]))
             points_img_dict[cam_name] = img_buf
         return points_img_dict
+    
+    def project_2d_to_image(self, seq_id, frame_id):
+        split_name = self._find_split_name(seq_id)
+        if split_name not in ['train', 'val']:
+            print("seq id {} not in train/val, has no 2d annotations".format(seq_id))
+            return
+        frame_info = getattr(self, '{}_info'.format(split_name))[seq_id][frame_id]
+        img_dict = dict()
+        img_list = self.undistort_image(seq_id, frame_id)
+        for cam_no, cam_name in enumerate(self.__class__.camera_names):
+            img_buf = img_list[cam_no]
+            cam_annos_2d = frame_info['annos']['boxes_2d'][cam_name]
+            for box2d in cam_annos_2d:
+                box2d = list(map(int, box2d))
+                if box2d[0] < 0:
+                    continue
+                cv2.rectangle(img_buf, tuple(box2d[:2], box2d[2:]), (255, 0, 0), 2)
+            img_dict[cam_name] = img_buf
+        return img_dict
 
     def frame_concat(self, seq_id, frame_id, concat_cnt=0):
         """
