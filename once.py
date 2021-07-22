@@ -200,7 +200,7 @@ class ONCE(object):
                 box2d = list(map(int, box2d))
                 if box2d[0] < 0:
                     continue
-                cv2.rectangle(img_buf, tuple(box2d[:2], box2d[2:]), (255, 0, 0), 2)
+                cv2.rectangle(img_buf, tuple(box2d[:2]), tuple(box2d[2:]), (255, 0, 0), 2)
             img_dict[cam_name] = img_buf
         return img_dict
 
