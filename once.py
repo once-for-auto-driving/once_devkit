@@ -12,7 +12,7 @@ def split_info_loader_helper(func):
     def wrapper(*args, **kwargs):
         split_file_path = func(*args, **kwargs)
         if not osp.isfile(split_file_path):
-            split_list = None
+            split_list = []
         else:
             split_list = set(map(lambda x: x.strip(), open(split_file_path).readlines()))
         return split_list
@@ -109,7 +109,7 @@ class ONCE(object):
                     anno_file = json.load(open(anno_file_path, 'r'))
                     frame_list = list()
                     for frame_anno in anno_file['frames']:
-                        frame_list.append(frame_anno['frame_id'])
+                        frame_list.append(str(frame_anno['frame_id']))
                         info_dict[seq][frame_anno['frame_id']] = {
                             'pose': frame_anno['pose'],
                         }
@@ -157,6 +157,22 @@ class ONCE(object):
                                           newCameraMatrix=cam_calib['cam_intrinsic']))
         return img_list
 
+    def undistort_image_v2(self, seq_id, frame_id):
+        img_list = []
+        split_name = self._find_split_name(seq_id)
+        frame_info = getattr(self, '{}_info'.format(split_name))[seq_id][frame_id]
+        for cam_name in self.__class__.camera_names:
+            img_buf = self.load_image(seq_id, frame_id, cam_name)
+            cam_calib = frame_info['calib'][cam_name]
+            h, w = img_buf.shape[:2]
+            new_cam_intrinsic, _ = cv2.getOptimalNewCameraMatrix(cam_calib['cam_intrinsic'],
+                                          cam_calib['distortion'],
+                                          (w, h), alpha=0.0, newImgSize=(w, h))
+            img_list.append(cv2.undistort(img_buf, cam_calib['cam_intrinsic'],
+                                          cam_calib['distortion'],
+                                          newCameraMatrix=new_cam_intrinsic))
+        return img_list
+
     def project_lidar_to_image(self, seq_id, frame_id):
         points = self.load_point_cloud(seq_id, frame_id)
 
@@ -192,7 +208,7 @@ class ONCE(object):
             return
         frame_info = getattr(self, '{}_info'.format(split_name))[seq_id][frame_id]
         img_dict = dict()
-        img_list = self.undistort_image(seq_id, frame_id)
+        img_list = self.undistort_image_v2(seq_id, frame_id)
         for cam_no, cam_name in enumerate(self.__class__.camera_names):
             img_buf = img_list[cam_no]
             cam_annos_2d = frame_info['annos']['boxes_2d'][cam_name]
@@ -217,31 +233,33 @@ class ONCE(object):
         start_idx = seq_info['frame_list'].index(frame_id)
         points_list = []
         translation_r = None
-        for i in range(start_idx, start_idx + concat_cnt + 1):
-            current_frame_id = seq_info['frame_list'][i]
-            frame_info = seq_info[current_frame_id]
-            transform_data = frame_info['pose']
-
-            points = self.load_point_cloud(seq_id, current_frame_id)
-            points_xyz = points[:, :3]
-
-            rotation = Rotation.from_quat(transform_data[:4]).as_matrix()
-            translation = np.array(transform_data[4:]).transpose()
-            points_xyz = np.dot(points_xyz, rotation.T)
-            points_xyz = points_xyz + translation
-            if i == start_idx:
-                translation_r = translation
-            points_xyz = points_xyz - translation_r
-            points_list.append(np.hstack([points_xyz, points[:, 3:]]))
+        try:
+            for i in range(start_idx, start_idx + concat_cnt + 1):
+                current_frame_id = seq_info['frame_list'][i]
+                frame_info = seq_info[current_frame_id]
+                transform_data = frame_info['pose']
+    
+                points = self.load_point_cloud(seq_id, current_frame_id)
+                points_xyz = points[:, :3]
+    
+                rotation = Rotation.from_quat(transform_data[:4]).as_matrix()
+                translation = np.array(transform_data[4:]).transpose()
+                points_xyz = np.dot(points_xyz, rotation.T)
+                points_xyz = points_xyz + translation
+                if i == start_idx:
+                    translation_r = translation
+                points_xyz = points_xyz - translation_r
+                points_list.append(np.hstack([points_xyz, points[:, 3:]]))
+        except ValueError:
+            print('warning: part of the frames have no available pose information, return first frame point instead')
+            points = self.load_point_cloud(seq_id, seq_info['frame_list'][start_idx])
+            points_list.append(points)
+            return points_list
         return points_list
 
 
 if __name__ == '__main__':
-    dataset = ONCE('./data')
-    print(len(dataset.train_split_list))
-    print(len(dataset.raw_small_split_list))
-    # points_list = dataset.frame_concat('000000', '1616003650999', 3)
-    # import pickle
-    # pickle.dump(points_list, open('concat_sample.pkl', 'wb'))
-    # img_dict = dataset.project_lidar_to_image('000000', '1616003650999')
-    # cv2.imwrite('lidar_project.png', img_dict['cam01'])
+    dataset = ONCE('/root')
+    # img_buf_dict = dataset.project_2d_to_image('000076', '1616343527200')
+    # for cam_name, img_buf in img_buf_dict.items():
+    #     cv2.imwrite('2d_project_{}.jpg'.format(cam_name), cv2.cvtColor(img_buf, cv2.COLOR_BGR2RGB))
