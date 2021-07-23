@@ -138,7 +138,6 @@ class ONCE(object):
 
     def load_image(self, seq_id, frame_id, cam_name):
         cam_path = osp.join(self.data_root, seq_id, cam_name, '{}.jpg'.format(frame_id))
-        print(cam_path)
         img_buf = cv2.cvtColor(cv2.imread(cam_path), cv2.COLOR_BGR2RGB)
         return img_buf
 
