@@ -56,7 +56,7 @@ class ONCE(object):
     @property
     @split_info_loader_helper
     def test_split_list(self):
-        return osp.join(self.dataset_root, 'ImageSets', 'test_set.txt')
+        return osp.join(self.dataset_root, 'ImageSets', 'test.txt')
 
     @property
     @split_info_loader_helper
