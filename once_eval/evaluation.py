@@ -435,14 +435,15 @@ def compute_iou3d_cpu(gt_annos, pred_annos):
         gt_boxes = gt_annos[i]['boxes_3d']
         pred_boxes = pred_annos[i]['boxes_3d']
 
-        iou3d_part = iou3d_kernel_cpu_with_heading(gt_boxes, pred_boxes)
+        iou3d_part = rotate_iou_cpu_eval(gt_boxes, pred_boxes)
         ious.append(iou3d_part)
     return ious
 
 
 if __name__ == '__main__':
-    info_data = pickle.load(open('once_infos_val.pkl'), 'rb') # you can find this file in once_devkit/submission_format/
-    pred_data = pickle.load(open('result.pkl'), 'rb') # your prediction file
+    import pickle
+    info_data = pickle.load(open('once_infos_val.pkl', 'rb')) # you can find this file in once_devkit/submission_format/
+    pred_data = pickle.load(open('result.pkl', 'rb')) # your prediction file
     gt_data = list()
     for item in info_data:
         if 'annos' in item:
