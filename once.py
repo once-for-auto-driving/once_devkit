@@ -222,13 +222,13 @@ class ONCE(object):
 
             calib_info = frame_info['calib'][cam_name]
             cam_2_velo = calib_info['cam_to_velo']
-            cam_intri = np.hstack([new_cam_intrinsic_dict[cam_name], np.zeros(3, 1), dtype=np.float32])
+            cam_intri = np.hstack([new_cam_intrinsic_dict[cam_name], np.zeros((3, 1), dtype=np.float32)])
 
             cam_annos_3d = np.array(frame_info['annos']['boxes_3d'])
 
             corners_norm = np.stack(np.unravel_index(np.arange(8), [2, 2, 2]), axis=1).astype(
                 np.float32)[[0, 1, 3, 2, 0, 4, 5, 7, 6, 4, 5, 1, 3, 7, 6, 2], :] - 0.5
-            corners = np.multipy(cam_annos_3d[:, 3: 6].reshape(-1, 1, 3), corners_norm)
+            corners = np.multiply(cam_annos_3d[:, 3: 6].reshape(-1, 1, 3), corners_norm)
             rot_matrix = np.stack(list([np.transpose(self.rotate_z(box[-1])) for box in cam_annos_3d]), axis=0)
             corners = np.einsum('nij,njk->nik', corners, rot_matrix) + cam_annos_3d[:, :3].reshape((-1, 1, 3))
 
@@ -301,4 +301,4 @@ if __name__ == '__main__':
             cv2.imwrite('images/box_project_{}_{}.jpg'.format(cam_name, frame_id), cv2.cvtColor(img_buf, cv2.COLOR_BGR2RGB))
         img_buf_dict = dataset.project_lidar_to_image(seq_id, frame_id)
         for cam_name, img_buf in img_buf_dict.items():
-            cv2.imwrite('images/lidar_project_{}_{}.jpg'.format(cam_name, frame_id0, cv2.cvtColor(img_buf, cv2.COLOR_BGR2RGB)))
+            cv2.imwrite('images/lidar_project_{}_{}.jpg'.format(cam_name, frame_id), cv2.cvtColor(img_buf, cv2.COLOR_BGR2RGB))
