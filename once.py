@@ -159,6 +159,7 @@ class ONCE(object):
 
     def undistort_image_v2(self, seq_id, frame_id):
         img_list = []
+        new_cam_intrinsic_dict = dict()
         split_name = self._find_split_name(seq_id)
         frame_info = getattr(self, '{}_info'.format(split_name))[seq_id][frame_id]
         for cam_name in self.__class__.camera_names:
@@ -171,7 +172,8 @@ class ONCE(object):
             img_list.append(cv2.undistort(img_buf, cam_calib['cam_intrinsic'],
                                           cam_calib['distortion'],
                                           newCameraMatrix=new_cam_intrinsic))
-        return img_list
+            new_cam_intrinsic_dict[cam_name] = new_cam_intrinsic
+        return img_list, new_cam_intrinsic_dict
 
     def project_lidar_to_image(self, seq_id, frame_id):
         points = self.load_point_cloud(seq_id, frame_id)
@@ -179,11 +181,11 @@ class ONCE(object):
         split_name = self._find_split_name(seq_id)
         frame_info = getattr(self, '{}_info'.format(split_name))[seq_id][frame_id]
         points_img_dict = dict()
-        img_list = self.undistort_image(seq_id, frame_id)
+        img_list, new_cam_intrinsic_dict = self.undistort_image_v2(seq_id, frame_id)
         for cam_no, cam_name in enumerate(self.__class__.camera_names):
             calib_info = frame_info['calib'][cam_name]
             cam_2_velo = calib_info['cam_to_velo']
-            cam_intri = np.hstack([calib_info['cam_intrinsic'], np.zeros((3, 1), dtype=np.float32)])
+            cam_intri = np.hstack([new_cam_intrinsic_dict[cam_name], np.zeros((3, 1), dtype=np.float32)])
             point_xyz = points[:, :3]
             points_homo = np.hstack(
                 [point_xyz, np.ones(point_xyz.shape[0], dtype=np.float32).reshape((-1, 1))])
@@ -200,23 +202,56 @@ class ONCE(object):
                     print(int(point[0]), int(point[1]))
             points_img_dict[cam_name] = img_buf
         return points_img_dict
-    
-    def project_2d_to_image(self, seq_id, frame_id):
+
+    @staticmethod
+    def rotate_z(theta):
+        return np.array([[np.cos(theta), -np.sin(theta), 0],
+                         [np.sin(theta), np.cos(theta), 0],
+                         [0, 0, 1]])
+
+    def project_boxes_to_image(self, seq_id, frame_id):
         split_name = self._find_split_name(seq_id)
         if split_name not in ['train', 'val']:
             print("seq id {} not in train/val, has no 2d annotations".format(seq_id))
             return
         frame_info = getattr(self, '{}_info'.format(split_name))[seq_id][frame_id]
         img_dict = dict()
-        img_list = self.undistort_image_v2(seq_id, frame_id)
+        img_list, new_cam_intrinsic_dict = self.undistort_image_v2(seq_id, frame_id)
         for cam_no, cam_name in enumerate(self.__class__.camera_names):
             img_buf = img_list[cam_no]
+
+            calib_info = frame_info['calib'][cam_name]
+            cam_2_velo = calib_info['cam_to_velo']
+            cam_intri = np.hstack([new_cam_intrinsic_dict[cam_name], np.zeros(3, 1), dtype=np.float32])
+
+            cam_annos_3d = np.array(frame_info['annos']['boxes_3d'])
+
+            corners_norm = np.stack(np.unravel_index(np.arange(8), [2, 2, 2]), axis=1).astype(
+                np.float32)[[0, 1, 3, 2, 0, 4, 5, 7, 6, 4, 5, 1, 3, 7, 6, 2], :] - 0.5
+            corners = np.multipy(cam_annos_3d[:, 3: 6].reshape(-1, 1, 3), corners_norm)
+            rot_matrix = np.stack(list([np.transpose(self.rotate_z(box[-1])) for box in cam_annos_3d]), axis=0)
+            corners = np.einsum('nij,njk->nik', corners, rot_matrix) + cam_annos_3d[:, :3].reshape((-1, 1, 3))
+
+            for i, corner in enumerate(corners):
+                points_homo = np.hstack([corner, np.ones(corner.shape[0], dtype=np.float32).reshape((-1, 1))])
+                points_lidar = np.dot(points_homo, np.linalg.inv(cam_2_velo).T)
+                mask = points_lidar[:, 2] > 0
+                points_lidar = points_lidar[mask]
+                points_img = np.dot(points_lidar, cam_intri.T)
+                points_img = points_img / points_img[:, [2]]
+                if points_img.shape[0] != 16:
+                    continue
+                for j in range(15):
+                    cv2.line(img_buf, (int(points_img[j][0]), int(points_img[j][1])), (int(points_img[j+1][0]), int(points_img[j+1][1])), (0, 255, 0), 2, cv2.LINE_AA)
+
             cam_annos_2d = frame_info['annos']['boxes_2d'][cam_name]
+
             for box2d in cam_annos_2d:
                 box2d = list(map(int, box2d))
                 if box2d[0] < 0:
                     continue
                 cv2.rectangle(img_buf, tuple(box2d[:2]), tuple(box2d[2:]), (255, 0, 0), 2)
+
             img_dict[cam_name] = img_buf
         return img_dict
 
@@ -260,6 +295,10 @@ class ONCE(object):
 
 if __name__ == '__main__':
     dataset = ONCE('/root')
-    # img_buf_dict = dataset.project_2d_to_image('000076', '1616343527200')
-    # for cam_name, img_buf in img_buf_dict.items():
-    #     cv2.imwrite('2d_project_{}.jpg'.format(cam_name), cv2.cvtColor(img_buf, cv2.COLOR_BGR2RGB))
+    for seq_id, frame_id in [('000092', '1616442892300')]:
+        img_buf_dict = dataset.project_boxes_to_image(seq_id, frame_id)
+        for cam_name, img_buf in img_buf_dict.items():
+            cv2.imwrite('images/box_project_{}_{}.jpg'.format(cam_name, frame_id), cv2.cvtColor(img_buf, cv2.COLOR_BGR2RGB))
+        img_buf_dict = dataset.project_lidar_to_image(seq_id, frame_id)
+        for cam_name, img_buf in img_buf_dict.items():
+            cv2.imwrite('images/lidar_project_{}_{}.jpg'.format(cam_name, frame_id0, cv2.cvtColor(img_buf, cv2.COLOR_BGR2RGB)))
