@@ -72,10 +72,10 @@ def sort_vertex_in_convex_polygon(int_pts, num_of_inter):
     device=True,
     inline=True)
 def line_segment_intersection(pts1, pts2, i, j, temp_pts):
-    A = cuda.local.array((2,), dtype=numba.float32)
-    B = cuda.local.array((2,), dtype=numba.float32)
-    C = cuda.local.array((2,), dtype=numba.float32)
-    D = cuda.local.array((2,), dtype=numba.float32)
+    A = cuda.local.array((2,), dtype=numba.float64)
+    B = cuda.local.array((2,), dtype=numba.float64)
+    C = cuda.local.array((2,), dtype=numba.float64)
+    D = cuda.local.array((2,), dtype=numba.float64)
 
     A[0] = pts1[2 * i]
     A[1] = pts1[2 * i + 1]
